@@ -3,6 +3,7 @@ package node
 import (
 	"encoding/json"
 	"fmt"
+	"syscall"
 	"time"
 
 	"github.com/pkg/errors"
@@ -217,15 +218,19 @@ func (m *Lifecycle) provision(driverConfig, nodeDir string, obj *v3.Node) (*v3.N
 
 	createCommandsArgs := buildCreateCommand(obj, configRawMap)
 	cmd := buildCommand(nodeDir, createCommandsArgs)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
 	m.logger.Infof(obj, "Provisioning node %s", obj.Spec.RequestedHostname)
 
 	stdoutReader, stderrReader, err := startReturnOutput(cmd)
 	if err != nil {
 		return obj, err
 	}
-	defer stdoutReader.Close()
-	defer stderrReader.Close()
-	defer cmd.Wait()
+	defer func() {
+		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		cmd.Wait()
+	}()
 
 	obj, err = m.reportStatus(stdoutReader, stderrReader, obj)
 	if err != nil {
@@ -233,6 +238,7 @@ func (m *Lifecycle) provision(driverConfig, nodeDir string, obj *v3.Node) (*v3.N
 	}
 
 	if err := cmd.Wait(); err != nil {
+		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		return obj, err
 	}
 
