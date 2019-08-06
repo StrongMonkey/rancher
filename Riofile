@@ -1,0 +1,5 @@
+services:
+  rancher:
+    ports:
+    - 80/http
+    
